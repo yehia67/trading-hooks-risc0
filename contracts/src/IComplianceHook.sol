@@ -23,11 +23,6 @@ interface IComplianceHook {
     /// @param amount Amount the user intends to trade.
     /// @param journal ABI-encoded journal produced by the RISC Zero guest.
     /// @param seal Zero-knowledge proof (seal) returned by the verifier.
-    function beforeTrade(
-        address user,
-        bytes32 productId,
-        uint256 amount,
-        bytes calldata journal,
-        bytes calldata seal
-    ) external;
+    function beforeTrade(address user, bytes32 productId, uint256 amount, bytes calldata journal, bytes calldata seal)
+        external;
 }

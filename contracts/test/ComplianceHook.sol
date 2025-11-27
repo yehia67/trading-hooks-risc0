@@ -48,16 +48,14 @@ contract ComplianceHookTest is RiscZeroCheats, Test {
 
     function test_AllowsWhenAllowedTrue() public {
         bytes memory journal = _buildJournal(user, productId, true);
-        RiscZeroReceipt memory receipt =
-            verifier.mockProve(ImageID.COMPLIANCE_ID, sha256(journal));
+        RiscZeroReceipt memory receipt = verifier.mockProve(ImageID.COMPLIANCE_ID, sha256(journal));
 
         hook.beforeTrade(user, productId, amount, journal, receipt.seal);
     }
 
     function test_RevertWhenUserNotAllowed() public {
         bytes memory journal = _buildJournal(user, productId, false);
-        RiscZeroReceipt memory receipt =
-            verifier.mockProve(ImageID.COMPLIANCE_ID, sha256(journal));
+        RiscZeroReceipt memory receipt = verifier.mockProve(ImageID.COMPLIANCE_ID, sha256(journal));
 
         vm.expectRevert("ComplianceHook: user not allowed");
         hook.beforeTrade(user, productId, amount, journal, receipt.seal);
@@ -66,8 +64,7 @@ contract ComplianceHookTest is RiscZeroCheats, Test {
     function test_RevertWhenUserMismatch() public {
         address otherUser = address(0x5678);
         bytes memory journal = _buildJournal(otherUser, productId, true);
-        RiscZeroReceipt memory receipt =
-            verifier.mockProve(ImageID.COMPLIANCE_ID, sha256(journal));
+        RiscZeroReceipt memory receipt = verifier.mockProve(ImageID.COMPLIANCE_ID, sha256(journal));
 
         vm.expectRevert("ComplianceHook: user mismatch");
         hook.beforeTrade(user, productId, amount, journal, receipt.seal);
@@ -77,8 +74,7 @@ contract ComplianceHookTest is RiscZeroCheats, Test {
     function test_RejectInvalidProof() public {
         bytes memory journal = _buildJournal(user, productId, true);
         bytes memory otherJournal = _buildJournal(user, bytes32(uint256(2)), true);
-        RiscZeroReceipt memory receipt =
-            verifier.mockProve(ImageID.COMPLIANCE_ID, sha256(otherJournal));
+        RiscZeroReceipt memory receipt = verifier.mockProve(ImageID.COMPLIANCE_ID, sha256(otherJournal));
 
         vm.expectRevert(VerificationFailed.selector);
         hook.beforeTrade(user, productId, amount, journal, receipt.seal);

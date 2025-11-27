@@ -34,23 +34,18 @@ contract ComplianceHook is IComplianceHook {
         VERIFIER = _verifier;
     }
 
-    function beforeTrade(
-        address user,
-        bytes32 productId,
-        uint256 amount,
-        bytes calldata journal,
-        bytes calldata seal
-    ) external override {
+    function beforeTrade(address user, bytes32 productId, uint256 amount, bytes calldata journal, bytes calldata seal)
+        external
+        override
+    {
         VERIFIER.verify(seal, IMAGE_ID, sha256(journal));
 
-        (address journalUser, bytes32 journalProductId, bool allowed) =
-            abi.decode(journal, (address, bytes32, bool));
+        (address journalUser, bytes32 journalProductId, bool allowed) = abi.decode(journal, (address, bytes32, bool));
 
         require(journalUser == user, "ComplianceHook: user mismatch");
         require(journalProductId == productId, "ComplianceHook: product mismatch");
         require(allowed, "ComplianceHook: user not allowed");
 
-
-        amount; 
+        amount;
     }
 }
