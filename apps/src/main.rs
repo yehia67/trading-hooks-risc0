@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use crate::even_number::IComplianceHook::IComplianceHookInstance;
 use alloy::{
-    primitives::{Address, B256, Bytes, U256},
+    primitives::{Address, Bytes, B256, U256},
     signers::local::PrivateKeySigner,
     sol_types::SolValue,
 };
@@ -115,11 +115,7 @@ async fn main() -> Result<()> {
 
     tracing::info!("Waiting for request {:x} to be fulfilled", request_id);
     let fulfillment = client
-        .wait_for_request_fulfillment(
-            request_id,
-            Duration::from_secs(5), 
-            expires_at,
-        )
+        .wait_for_request_fulfillment(request_id, Duration::from_secs(5), expires_at)
         .await?;
     tracing::info!("Request {:x} fulfilled", request_id);
 
@@ -127,7 +123,6 @@ async fn main() -> Result<()> {
     type Output = (Address, B256, bool);
     let journal_bytes = <Output>::abi_encode(&(args.user, args.product_id, allowed));
     let journal = Bytes::from(journal_bytes);
-
 
     let hook = IComplianceHookInstance::new(args.even_number_address, client.provider().clone());
     let call_before_trade = hook
