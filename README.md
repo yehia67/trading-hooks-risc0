@@ -1,102 +1,190 @@
-# Boundless Foundry Template
+# RWA Trading Hooks with RISC Zero
 
-This template serves as a starter app powered by verifiable compute via [Boundless](https://docs.beboundless.xyz). 
+This project explores how to build **compliance-aware trading hooks for real-world assets (RWA)**
+using **RISC Zero zkVM proofs** together with **Steel**, the Boundless zk-coprocessor library
+that lets guest programs access smart contract state via **Boundless**.
+Compliance checks (KYC/AML, jurisdiction rules, product-specific policies) run off-chain in a zkVM
+"rules engine" and only expose a minimal on-chain decision:
 
-It is built around a simple smart contract, `EvenNumber` deployed on Sepolia, and its associated RISC Zero guest, `is-even`. To get you started, we have deployed to [EvenNumber contract](https://sepolia.etherscan.io/address/0xE819474E78ad6e1C720a21250b9986e1f6A866A3#code) to Sepolia; we have also pre-uploaded the `is-even` guest to IPFS.
+> Is this user allowed to trade this product under the current conditions? (allowed: `true`/`false`)
 
-## Quick-start
+All sensitive user data (KYC, AML, attributes) remains **off-chain**, and only commitments and
+high-level results are visible on-chain.
 
-1. [Install RISC Zero](https://dev.risczero.com/api/zkvm/install)
+## Architecture
 
-   ```sh
-   curl -L https://risczero.com/install | bash
-   rzup install
-   ```
+Conceptually, the system looks like this:
 
-2. Clone this repo
-
-   You can clone this repo with `git`, or use `forge init`:
-
-   ```bash
-   forge init --template https://github.com/boundless-xyz/boundless-foundry-template boundless-foundry-template
-   ```
-3. Set up your environment variables
-
-   Export your Sepolia wallet private key as an environment variable (making sure it has enough funds):
-
-   ```bash
-   export RPC_URL="https://ethereum-sepolia-rpc.publicnode.com"
-   export PRIVATE_KEY="YOUR_PRIVATE_KEY"
-   ```
-
-   You'll also need a deployment of the [EvenNumber contract](./contracts/src/EvenNumber.sol).
-   You can use a predeployed contract on Sepolia:
-
-   ```bash
-   export EVEN_NUMBER_ADDRESS="0xE819474E78ad6e1C720a21250b9986e1f6A866A3"
-   ```
-
-4. Run the example app
-
-   The [example app](apps/src/main.rs) will submit a request to the market for a proof that "4" is an even number, wait for the request to be fulfilled, and then submit that proof to the EvenNumber contract, setting the value to "4".
-
-   To run the example using the pre-uploaded zkVM guest:
-
-   ```bash
-   RUST_LOG=info cargo run --bin app -- --number 4 --program-url https://plum-accurate-weasel-904.mypinata.cloud/ipfs/QmU7eqsYWguHCYGQzcg42faQQkgRfWScig7BcsdM1sJciw
-   ```
-## Development
-
-### Build
-
-To build the example run:
-
+```text
+┌───────────────┐     ┌───────────────┐     ┌───────────────┐
+│  User Registry│────▶│  Rules Engine │◀─── │    Product    │
+└───────┬───────┘     └───────────────┘     └───────┬───────┘
+        │                     ▲                     │
+        │                     │                     │
+        │             ┌───────┴───────┐             │
+        └────────────▶│     Rules     │◀────────────┘
+                      └───────────────┘
+                              ▲
+                              │
+                      ┌───────┴───────┐
+                      │   Conditions  │
+                      └───────────────┘
 ```
-forge build
+
+- **User Registry**: maps user addresses (or IDs) to commitments of their private attributes
+  (e.g. Merkle roots for KYC/AML data).
+- **Product Registry**: maps product IDs (e.g. GOLD_US, STOCK_XYZ) to policy commitments
+  that encode who is allowed to trade the product.
+- **Rules / Conditions**: off-chain semantics like "gold for US citizens only",
+  "KYC level ≥ 2", "not sanctioned", etc., encoded as hashes/commitments.
+- **Rules Engine**: implemented as a **RISC Zero guest program** plus an on-chain verifier
+  and hook contract. The guest verifies Merkle proofs, applies the rules, and outputs a
+  boolean `allowed` in its journal.
+
+On-chain, a **trading hook** contract consumes `(journal, seal)` from the zkVM and reverts
+if `allowed == false`.
+
+## High-Level Flow
+
+1. **Off-chain preparation**
+   - User obtains KYC/AML credentials from a provider.
+   - The provider (or wallet) maintains a Merkle tree over user attributes and publishes only
+     the Merkle root to the **User Registry**.
+   - Products (e.g. gold, stocks) have policies encoded similarly and published as roots in
+     the **Product Registry**.
+
+2. **Proving (RISC Zero guest)**
+   - Host code prepares input for the guest (user ID, product ID, Merkle proofs, etc.).
+   - The guest reconstructs the relevant registry state, verifies Merkle links, applies the
+     compliance rules, and commits a journal containing (among other things):
+     - `user` (or user ID)
+     - `productId`
+     - `allowed: bool`
+
+3. **Verification & trading hook**
+   - A zk proof (seal) and the journal are submitted to an on-chain **hook contract**.
+   - The hook verifies the proof using a RISC Zero verifier and checks that `allowed == true`.
+   - If verification fails or `allowed == false`, the trade is rejected.
+
+The result is a **privacy-preserving compliance gate** for RWA trading.
+
+## Dependencies
+
+To work with this project you will typically need:
+
+- [Rust]
+- [Foundry]
+- [RISC Zero]
+- [Boundless]
+- [Steel]
+
+Depending on whether you use remote proving (e.g. Bonsai) or local proving with Docker,
+you may also need additional tooling; see the deployment guide for details.
+
+### Configuring Bonsai (optional)
+
+***Note:*** *To request an API key [complete the form here](https://bonsai.xyz/apply).* 
+
+With the Bonsai proving service, you can produce a [Groth16 SNARK proof] that is verifiable on-chain.
+You can get started by setting the following environment variables with your API key and associated URL.
+
+```bash
+export BONSAI_API_KEY="YOUR_API_KEY" # see form linked above
+export BONSAI_API_URL="BONSAI_API_URL" # provided with your api key
+```
+
+## Project Layout (high level)
+
+The concrete modules and contract names may evolve, but the layout follows this pattern:
+
+- **contracts/**
+  - On-chain verifier and trading hook contracts.
+  - Registry contracts for users/products and associated commitments.
+- **methods/**
+  - zkVM guest code (compliance rules engine) and build script that produce the program ELF
+    and image ID for the RISC Zero verifier.
+- **apps/**
+  - Host applications that construct inputs, request proofs, and submit `(journal, seal)`
+    to the trading hook contracts.
+
+Refer to `deployment-guide.md` for a concrete end-to-end flow based on this structure.
+
+## Build and Test
+
+### Build Rust components
+
+```bash
 cargo build
 ```
 
-### Test
-
-Test the Solidity smart contracts with:
-
-```bash
-forge test -vvv
-```
-
-Test the Rust code including the guest with:
+### Run Rust tests (host + methods)
 
 ```bash
 cargo test
 ```
 
-### Deploying the EvenNumber contract
-
-You can deploy your smart contracts using forge script. To deploy the `EvenNumber` contract, run:
-
-```
-VERIFIER_ADDRESS="0x925d8331ddc0a1F0d96E68CF073DFE1d92b69187" forge script contracts/scripts/Deploy.s.sol --rpc-url ${RPC_URL:?} --broadcast -vv
-export EVEN_NUMBER_ADDRESS=# address from the logs the script.
-```
-
-This will use the locally build guest binary, which you will need to upload using the steps below.
-
-### Uploading your own guest program
-
-When you modify your program, you'll need to upload your program to a public URL.
-You can use any file hosting service, and the Boundless SDK provides built-in support uploading to AWS S3, and to IPFS via [Pinata](https://www.pinata.cloud/).
-
-If you'd like to upload your program automatically using Pinata:
+### Build Solidity contracts
 
 ```bash
-# The JWT from your Pinata account: https://app.pinata.cloud/developers/api-keys
-export PINATA_JWT="YOUR_PINATA_JWT"
+forge build
 ```
 
-Then run without the `--program-url` flag:
+### Run Solidity tests
 
 ```bash
-RUST_LOG=info cargo run --bin app -- --number 4
+forge test -vvv
 ```
 
-You can also upload your program to any public URL ahead of time, and supply the URL via the `--program-url` flag.
+### End-to-end script (if present)
+
+If the repository provides an end-to-end script:
+
+```bash
+./e2e-test.sh
+```
+
+## Local Devnet Quickstart (Anvil)
+
+The exact contracts and parameters depend on your current iteration. A typical local flow is:
+
+1. **Start a local devnet**:
+
+   ```bash
+   anvil
+   ```
+
+2. **In a new terminal, set environment variables** (see `deployment-guide.md` for concrete examples):
+
+   ```bash
+   export ETH_WALLET_PRIVATE_KEY=<anvil_private_key>
+   export BONSAI_API_KEY="YOUR_API_KEY"      # optional if proving via Bonsai
+   export BONSAI_API_URL="BONSAI_API_URL"   # optional if proving via Bonsai
+   ```
+
+3. **Build the project**:
+
+   ```bash
+   cargo build
+   forge build
+   ```
+
+4. **Deploy the verifier, registries, and trading hook** using your Foundry scripts.
+
+5. **Run the host app** to request a proof and submit it to the hook.
+
+6. **Query contract state** (e.g. exposure, balances, or positions) using `cast` to confirm
+   that compliant trades succeed and non-compliant trades revert.
+
+## Deploy Your Application
+
+For complete, step-by-step instructions on deploying to a local devnet or a public testnet
+such as Sepolia, see the [deployment guide].
+
+[Foundry]: https://getfoundry.sh/
+[Groth16 SNARK proof]: https://www.risczero.com/news/on-chain-verification
+[RISC Zero]: https://dev.risczero.com/api/zkvm/install
+[Boundless]: https://docs.boundless.network/developers/quick-start
+[Sepolia]: https://www.alchemy.com/overviews/sepolia-testnet
+[deployment guide]: ./deployment-guide.md
+[Rust]: https://doc.rust-lang.org/cargo/getting-started/installation.html
+[Steel]: https://docs.boundless.network/developers/steel/quick-start

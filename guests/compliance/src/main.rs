@@ -14,22 +14,24 @@
 
 use std::io::Read;
 
-use alloy_primitives::U256;
+use alloy_primitives::{Address, B256};
 use alloy_sol_types::SolValue;
 use risc0_zkvm::guest::env;
 
+
 fn main() {
-    // Read the input data for this application.
     let mut input_bytes = Vec::<u8>::new();
     env::stdin().read_to_end(&mut input_bytes).unwrap();
-    // Decode and parse the input
-    let number = <U256>::abi_decode(&input_bytes).unwrap();
 
-    // Run the computation.
-    // In this case, asserting that the provided number is even.
-    assert!(!number.bit(0), "number is not even");
+    type Input = (Address, B256, bool, bool);
 
-    // Commit the journal that will be received by the application contract.
-    // Journal is encoded using Solidity ABI for easy decoding in the app contract.
-    env::commit_slice(number.abi_encode().as_slice());
+    let (user, product_id, kyc_passed, aml_passed) =
+        <Input>::abi_decode(&input_bytes).expect("invalid compliance input");
+
+    let allowed = kyc_passed && aml_passed;
+
+    type Output = (Address, B256, bool);
+    let journal = <Output>::abi_encode(&(user, product_id, allowed));
+
+    env::commit_slice(&journal);
 }

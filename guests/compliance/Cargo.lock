@@ -673,6 +673,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67ba02a97a2bd10f4b59b25c7973101c79642302776489e030cd13cdab09ed15"
 
 [[package]]
+name = "compliance"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-sol-types",
+ "risc0-zkvm",
+]
+
+[[package]]
 name = "const-hex"
 version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1151,15 +1160,6 @@ dependencies = [
  "equivalent",
  "hashbrown",
  "serde",
-]
-
-[[package]]
-name = "is-even"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "alloy-sol-types",
- "risc0-zkvm",
 ]
 
 [[package]]

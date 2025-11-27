@@ -14,16 +14,16 @@
 
 use std::time::Duration;
 
-use crate::even_number::IEvenNumber::IEvenNumberInstance;
+use crate::even_number::IComplianceHook::IComplianceHookInstance;
 use alloy::{
-    primitives::{Address, U256},
+    primitives::{Address, B256, Bytes, U256},
     signers::local::PrivateKeySigner,
     sol_types::SolValue,
 };
 use anyhow::{bail, Context, Result};
 use boundless_market::{Client, Deployment, StorageProviderConfig};
 use clap::Parser;
-use guests::IS_EVEN_ELF;
+use guests::COMPLIANCE_ELF;
 use url::Url;
 
 /// Timeout for the transaction to be confirmed.
@@ -32,7 +32,7 @@ pub const TX_TIMEOUT: Duration = Duration::from_secs(30);
 mod even_number {
     alloy::sol!(
         #![sol(rpc, all_derives)]
-        "../contracts/src/IEvenNumber.sol"
+        "../contracts/src/IComplianceHook.sol"
     );
 }
 
@@ -52,18 +52,21 @@ struct Args {
     /// Address of the EvenNumber contract.
     #[clap(short, long, env)]
     even_number_address: Address,
-    /// URL where provers can download the program to be proven.
+    #[clap(long, env)]
+    user: Address,
+    #[clap(long, env)]
+    product_id: B256,
+    #[clap(long, env)]
+    kyc_passed: bool,
+    #[clap(long, env)]
+    aml_passed: bool,
     #[clap(long, env)]
     program_url: Option<Url>,
-    /// Submit the request offchain via the provided order stream service url.
     #[clap(short, long, requires = "order_stream_url")]
     offchain: bool,
-    /// Configuration for the StorageProvider to use for uploading programs and inputs.
     #[clap(flatten, next_help_heading = "Storage Provider")]
     storage_config: StorageProviderConfig,
-    /// Deployment of the Boundless contracts and services to use.
-    ///
-    /// Will be automatically resolved from the connected chain ID if unspecified.
+
     #[clap(flatten, next_help_heading = "Boundless Market Deployment")]
     deployment: Option<Deployment>,
 }
@@ -81,7 +84,6 @@ async fn main() -> Result<()> {
     }
     let args = Args::parse();
 
-    // Create a Boundless client from the provided parameters.
     let client = Client::builder()
         .with_rpc_url(args.rpc_url)
         .with_deployment(args.deployment)
@@ -91,11 +93,11 @@ async fn main() -> Result<()> {
         .await
         .context("failed to build boundless client")?;
 
-    // Encode the input for the guest program
     tracing::info!("Number to publish: {}", args.number);
-    let input_bytes = U256::from(args.number).abi_encode();
+    type Input = (Address, B256, bool, bool);
+    let input = (args.user, args.product_id, args.kyc_passed, args.aml_passed);
+    let input_bytes = <Input>::abi_encode(&input);
 
-    // Build the request based on whether program URL is provided
     let request = if let Some(program_url) = args.program_url {
         // Use the provided URL
         client
@@ -105,34 +107,44 @@ async fn main() -> Result<()> {
     } else {
         client
             .new_request()
-            .with_program(IS_EVEN_ELF)
+            .with_program(COMPLIANCE_ELF)
             .with_stdin(input_bytes)
     };
 
     let (request_id, expires_at) = client.submit_onchain(request).await?;
 
-    // Wait for the request to be fulfilled. The market will return the fulfillment.
     tracing::info!("Waiting for request {:x} to be fulfilled", request_id);
     let fulfillment = client
         .wait_for_request_fulfillment(
             request_id,
-            Duration::from_secs(5), // check every 5 seconds
+            Duration::from_secs(5), 
             expires_at,
         )
         .await?;
     tracing::info!("Request {:x} fulfilled", request_id);
 
-    // We interact with the EvenNumber contract by calling the set function with our number and
-    // the seal (i.e. proof) returned by the market.
-    let even_number = IEvenNumberInstance::new(args.even_number_address, client.provider().clone());
-    let call_set = even_number
-        .set(U256::from(args.number), fulfillment.seal)
+    let allowed = args.kyc_passed && args.aml_passed;
+    type Output = (Address, B256, bool);
+    let journal_bytes = <Output>::abi_encode(&(args.user, args.product_id, allowed));
+    let journal = Bytes::from(journal_bytes);
+
+
+    let hook = IComplianceHookInstance::new(args.even_number_address, client.provider().clone());
+    let call_before_trade = hook
+        .beforeTrade(
+            args.user,
+            args.product_id,
+            U256::from(args.number),
+            journal,
+            fulfillment.seal,
+        )
         .from(client.caller());
 
-    // By calling the set function, we verify the seal against the published roots
-    // of the SetVerifier contract.
-    tracing::info!("Calling EvenNumber set function");
-    let pending_tx = call_set.send().await.context("failed to broadcast tx")?;
+    tracing::info!("Calling ComplianceHook beforeTrade function");
+    let pending_tx = call_before_trade
+        .send()
+        .await
+        .context("failed to broadcast tx")?;
     tracing::info!("Broadcasting tx {}", pending_tx.tx_hash());
     let tx_hash = pending_tx
         .with_timeout(Some(TX_TIMEOUT))
@@ -140,18 +152,6 @@ async fn main() -> Result<()> {
         .await
         .context("failed to confirm tx")?;
     tracing::info!("Tx {:?} confirmed", tx_hash);
-
-    // Query the value stored at the EvenNumber address to check it was set correctly
-    let number = even_number
-        .get()
-        .call()
-        .await
-        .context("failed to get number from contract")?;
-    tracing::info!(
-        "The number variable for contract at address: {:?} is set to {:?}",
-        args.even_number_address,
-        number
-    );
 
     Ok(())
 }
