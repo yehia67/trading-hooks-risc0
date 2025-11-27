@@ -153,12 +153,12 @@ The exact contracts and parameters depend on your current iteration. A typical l
    anvil
    ```
 
-2. **In a new terminal, set environment variables** (see `deployment-guide.md` for concrete examples):
+2. **Deploy the ComplianceHook contract** using the Foundry script:
 
    ```bash
-   export ETH_WALLET_PRIVATE_KEY=<anvil_private_key>
-   export BONSAI_API_KEY="YOUR_API_KEY"      # optional if proving via Bonsai
-   export BONSAI_API_URL="BONSAI_API_URL"   # optional if proving via Bonsai
+   forge script contracts/scripts/Deploy.s.sol:Deploy \
+     --rpc-url http://localhost:8545 \
+     --broadcast -vv
    ```
 
 3. **Build the project**:
@@ -175,16 +175,5 @@ The exact contracts and parameters depend on your current iteration. A typical l
 6. **Query contract state** (e.g. exposure, balances, or positions) using `cast` to confirm
    that compliant trades succeed and non-compliant trades revert.
 
-## Deploy Your Application
 
-For complete, step-by-step instructions on deploying to a local devnet or a public testnet
-such as Sepolia, see the [deployment guide].
 
-[Foundry]: https://getfoundry.sh/
-[Groth16 SNARK proof]: https://www.risczero.com/news/on-chain-verification
-[RISC Zero]: https://dev.risczero.com/api/zkvm/install
-[Boundless]: https://docs.boundless.network/developers/quick-start
-[Sepolia]: https://www.alchemy.com/overviews/sepolia-testnet
-[deployment guide]: ./deployment-guide.md
-[Rust]: https://doc.rust-lang.org/cargo/getting-started/installation.html
-[Steel]: https://docs.boundless.network/developers/steel/quick-start
