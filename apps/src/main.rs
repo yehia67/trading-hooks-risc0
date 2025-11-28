@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use crate::even_number::IComplianceHook::IComplianceHookInstance;
+use crate::compliance_hook::IComplianceHook::IComplianceHookInstance;
 use alloy::{
     primitives::{Address, Bytes, B256, U256},
     signers::local::PrivateKeySigner,
@@ -29,29 +29,29 @@ use url::Url;
 /// Timeout for the transaction to be confirmed.
 pub const TX_TIMEOUT: Duration = Duration::from_secs(30);
 
-mod even_number {
+mod compliance_hook {
     alloy::sol!(
         #![sol(rpc, all_derives)]
         "../contracts/src/IComplianceHook.sol"
     );
 }
 
-/// Arguments of the publisher CLI.
+/// Arguments of the compliance trading CLI.
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    /// The number to publish to the EvenNumber contract.
+    /// Trade amount for the RWA asset.
     #[clap(short, long)]
-    number: u32,
+    amount: u32,
     /// URL of the Ethereum RPC endpoint.
     #[clap(short, long, env)]
     rpc_url: Url,
-    /// Private key used to interact with the EvenNumber contract and the Boundless Market.
+    /// Private key used to interact with the compliance hook contract and the Boundless Market.
     #[clap(long, env)]
     private_key: PrivateKeySigner,
-    /// Address of the EvenNumber contract.
+    /// Address of the compliance hook contract.
     #[clap(short, long, env)]
-    even_number_address: Address,
+    compliance_hook_address: Address,
     #[clap(long, env)]
     user: Address,
     #[clap(long, env)]
@@ -93,7 +93,7 @@ async fn main() -> Result<()> {
         .await
         .context("failed to build boundless client")?;
 
-    tracing::info!("Number to publish: {}", args.number);
+    tracing::info!("Attempting trade with amount: {}", args.amount);
     type Input = (Address, B256, bool, bool);
     let input = (args.user, args.product_id, args.kyc_passed, args.aml_passed);
     let input_bytes = <Input>::abi_encode(&input);
@@ -124,12 +124,13 @@ async fn main() -> Result<()> {
     let journal_bytes = <Output>::abi_encode(&(args.user, args.product_id, allowed));
     let journal = Bytes::from(journal_bytes);
 
-    let hook = IComplianceHookInstance::new(args.even_number_address, client.provider().clone());
+    let hook =
+        IComplianceHookInstance::new(args.compliance_hook_address, client.provider().clone());
     let call_before_trade = hook
         .beforeTrade(
             args.user,
             args.product_id,
-            U256::from(args.number),
+            U256::from(args.amount),
             journal,
             fulfillment.seal,
         )
