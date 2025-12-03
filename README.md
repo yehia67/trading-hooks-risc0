@@ -81,17 +81,6 @@ To work with this project you will typically need:
 Depending on whether you use remote proving (e.g. Bonsai) or local proving with Docker,
 you may also need additional tooling; see the deployment guide for details.
 
-### Configuring Bonsai (optional)
-
-***Note:*** *To request an API key [complete the form here](https://bonsai.xyz/apply).* 
-
-With the Bonsai proving service, you can produce a [Groth16 SNARK proof] that is verifiable on-chain.
-You can get started by setting the following environment variables with your API key and associated URL.
-
-```bash
-export BONSAI_API_KEY="YOUR_API_KEY" # see form linked above
-export BONSAI_API_URL="BONSAI_API_URL" # provided with your api key
-```
 
 ## Project Layout (high level)
 
