@@ -41,7 +41,7 @@ mod compliance_hook {
 #[clap(author, version, about, long_about = None)]
 struct Args {
     /// Trade amount for the RWA asset.
-    #[clap(short, long)]
+    #[clap(short, long, env)]
     amount: u32,
     /// URL of the Ethereum RPC endpoint.
     #[clap(short, long, env)]
