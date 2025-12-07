@@ -166,3 +166,74 @@ The exact contracts and parameters depend on your current iteration. A typical l
 
 
 
+
+## Ethereum Sepolia Deployment
+
+This repo also includes an end-to-end configuration for running the compliance hook against
+the **Boundless** market on **Ethereum Sepolia**.
+
+### 1. Configure environment variables
+
+Use [`.env.example`](./.env.example) as a template and copy it to a local `.env` file:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and fill in:
+
+- `RPC_URL` – Sepolia RPC endpoint (for example `https://ethereum-sepolia-rpc.publicnode.com`).
+- `PRIVATE_KEY` – EOA used to deploy and call the contracts.
+- `BOUNDLESS_MARKET_ADDRESS` – Boundless market address for Ethereum Sepolia.
+- `VERIFIER_ROUTER_ADDRESS` – `RiscZeroVerifierRouter` address on Ethereum Sepolia.
+- `SET_VERIFIER_ADDRESS` – `SetVerifier` contract address on Ethereum Sepolia.
+- `COMPLIANCE_HOOK_ADDRESS` – address of the `ComplianceHook` you deployed on Sepolia.
+- `PINATA_JWT` – Pinata JWT token, if you use Pinata as the storage provider for guest programs.
+- `AMOUNT`, `USER`, `PRODUCT_ID`, `KYC_PASSED`, `AML_PASSED` – example trade and compliance inputs.
+
+See [`.env.example`](./.env.example) for concrete values and formatting.
+
+### 2. Deploy ComplianceHook to Sepolia
+
+First, deploy the `ComplianceHook` contract using the Foundry script. Make sure
+`PRIVATE_KEY` and `VERIFIER_ROUTER_ADDRESS` are set in your environment (for example by
+sourcing `.env`):
+
+```bash
+forge script contracts/scripts/Deploy.s.sol:Deploy \
+  --fork-url "${RPC_URL}" \
+  --broadcast -vvvv
+```
+
+The script will log the deployed `ComplianceHook` address. Copy that address into
+`COMPLIANCE_HOOK_ADDRESS` in your `.env`.
+
+### 3. Request a proof and call the hook on Sepolia
+
+With `.env` configured, build and run the host app:
+
+```bash
+RUST_LOG=debug cargo run -p app --release
+```
+
+This will:
+
+- Build the RISC Zero guest (`COMPLIANCE_ELF`).
+- Use Boundless to submit a proof request to the Sepolia Boundless market.
+- Wait for the request to be fulfilled.
+- Call `ComplianceHook.beforeTrade` on Sepolia with the resulting `(journal, seal)`.
+
+On success, you should see logs similar to:
+
+```text
+om/}: alloy_transport_http::reqwest_transport: retrieved response body. Use `trace` for full body bytes=46
+2025-12-07T09:00:43.512848Z DEBUG alloy_provider::blocks: fetching block number=9787622
+2025-12-07T09:00:43.512868Z DEBUG alloy_rpc_client::call: sending request method=eth_getBlockByNumber id=94
+2025-12-07T09:00:43.513012Z DEBUG ReqwestTransport{url=https://ethereum-sepolia-rpc.publicnode.com/}: hyper_util::client::legacy::pool: reuse idle connection for ("https", ethereum-sepolia-rpc.publicnode.com)
+2025-12-07T09:00:43.954447Z DEBUG ReqwestTransport{url=https://ethereum-sepolia-rpc.publicnode.com/}: alloy_transport_http::reqwest_transport: received response from server status=200 OK
+2025-12-07T09:00:43.955625Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("https", ethereum-sepolia-rpc.publicnode.com)
+2025-12-07T09:00:43.955665Z DEBUG ReqwestTransport{url=https://ethereum-sepolia-rpc.publicnode.com/}: alloy_transport_http::reqwest_transport: retrieved response body. Use `trace` for full body bytes=8554
+2025-12-07T09:00:43.955878Z DEBUG alloy_provider::blocks: yielding block number=9787622
+2025-12-07T09:00:43.955898Z DEBUG alloy_provider::heart: handling block block_height=9787622
+2025-12-07T09:00:43.955948Z DEBUG alloy_provider::heart: notifying tx=0xbeb6111a9be8e3188d1e79c6dc946db53d24acbee21c50fc91f18a9e212e4e86
+2025-12-07T09:00:43.956090Z  INFO app: Tx 0xbeb6111a9be8e3188d1e79c6dc946db53d24acbee21c50fc91f18a9e212e4e86 confirmed
