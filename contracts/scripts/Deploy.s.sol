@@ -22,7 +22,7 @@ contract Deploy is Script {
     function run() external {
         // load ENV variables first
         uint256 key = vm.envUint("PRIVATE_KEY");
-        address verifierAddress = vm.envAddress("VERIFIER_ADDRESS");
+        address verifierAddress = vm.envAddress("VERIFIER_ROUTER_ADDRESS");
         vm.startBroadcast(key);
 
         IRiscZeroVerifier verifier = IRiscZeroVerifier(verifierAddress);
